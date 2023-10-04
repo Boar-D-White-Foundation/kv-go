@@ -106,3 +106,30 @@ TBD
 ## Conclusion
 
 This design document outlines the architecture and key features of a distributed in-memory key-value storage system. The project will be implemented in Go and aims to provide a high-throughput, fault-tolerant, and scalable storage solution.
+
+## Structure
+
+```mermaid
+graph TD;
+
+    subgraph Node
+        A[API Gateway] --> B[Request Handler]
+        B --> C[Sharding Mechanism]
+        C --> D[Data Store]
+        C --> E[Replication Manager]
+        E --> F[Replica Nodes]
+    end
+
+    subgraph Cluster
+        G[Client] --> A
+        H[Cluster Manager] -->|Node Discovery| A
+        I[Monitoring Service] -->|Monitor| A
+    end
+
+    J[External Data Backup] --> D
+
+    classDef default fill:#f9f9f9,stroke:#333,stroke-width:2px;
+    classDef storage fill:#FFDDC1,stroke:#333,stroke-width:2px;
+    class A,B,C,D,E,F,G,H,I default;
+    class J storage;
+```
