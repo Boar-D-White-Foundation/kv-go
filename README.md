@@ -1,8 +1,7 @@
-# kv-go
+# ~~awesome~~ kv-go
 
 # Disclaimer
-Use this project at your own risk.
-PRs are welcome!
+This is an educational project about how to develop scalable distributed systems. Just for fun. It is **not** intended for practical application. Use this project at your own risk.
 
 ## Distributed in-memory (at least for now) KV storage written in Go
 
@@ -10,8 +9,14 @@ PRs are welcome!
 
 ### Objective
 
-To design and implement a distributed in-memory key-value storage system using the Go programming language. The system should be capable of handling high throughput, be fault-tolerant, and easily scalable. This is an educational project about how to develop scalable distributed systems. Just for fun.
+To design and implement a distributed in-memory key-value storage system using the Go programming language. 
+The system should be capable of handling high throughput, be fault-tolerant, and easily scalable. 
 
+#### Key Features:
+* High Throughput: Initially, the system will be designed to handle 10K requests per second (RPS).
+* Storage Capacity: Each node in the system will start with the capability to store 1 million key-value pairs.
+* Fault Tolerance: The system will incorporate redundancy mechanisms to ensure data availability even in the event of node failures. This will be achieved through techniques such as data replication across multiple nodes. In case a node goes down, the system will automatically reroute requests to a healthy node, ensuring uninterrupted service.
+* Scalability: The architecture will be designed to easily add or remove nodes based on demand. This dynamic scalability ensures that as the system grows, it can accommodate more data and handle increased traffic without significant changes to the underlying infrastructure.
 
 ### Scope
 
@@ -63,11 +68,10 @@ To design and implement a distributed in-memory key-value storage system using t
 - **Data Recovery**: From replicas
 
 ### API
-
-- `Put(key, value)`
-- `Get(key)`
-- `Delete(key)`
-- `Update(key, value)`
+- `Put(key, value)`: Store a key-value pair. This operation typically goes to the leader of the shard to ensure data consistency.
+- `Get(key, consistency="strong")`: Retrieve the value associated with the given key. By default, this reads from the leader to ensure the most up-to-date data. If consistency="eventual", it might read from a follower, potentially returning stale data.
+- `Delete(key)`: Remove the key-value pair associated with the given key. This operation typically goes to the leader for consistency.
+- `Update(key, value)`: Modify the value associated with the given key. Like Put, this operation goes to the leader.
 
 ### Monitoring and Logging
 
@@ -77,7 +81,7 @@ To design and implement a distributed in-memory key-value storage system using t
 ## Technology Stack
 
 - **Language**: Go
-- **Communication**: gRPC for internal, REST for external
+- **Communication**: CLI+gRPC for internal
 - **Data Serialization**: Protocol Buffers
 - **Monitoring**: Prometheus and Grafana
 
@@ -93,9 +97,11 @@ TBD
 
 ## Future Enhancements
 
-1. Strong consistency options
-2. Multi-region support
-3. Time-To-Live (TTL) for keys
+* Strong consistency options
+* Multi-region support
+* Time-To-Live (TTL) for keys
+* Scale throughput up to 100K RPS
+* Leaderless approach
 
 ## Conclusion
 
