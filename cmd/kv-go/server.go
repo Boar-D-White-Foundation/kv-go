@@ -84,31 +84,29 @@ func (r *Raft) Start() {
 		case appendEntry := <-r.appendEntries:
 			switch s := st.s.(type) {
 			case *kv_go.Follower:
-				resp := s.HandleAppendEntry(appendEntry.request)
-				if !resp.Success {
-					log.Println("[DEBUG] can't accept AppendEntry RPC")
+				f, resp := s.HandleAppendEntry(appendEntry.request)
+				appendEntry.response <- resp
+				if f != nil {
+					log.Println(fmt.Sprintf("[INFO][Term: %v] follow for new leader", f.Term()))
+					st = fromFollower(f)
 				} else {
+					// reset timeout
 					st = fromFollower(s)
 				}
-				appendEntry.response <- resp
 			case *kv_go.Candidate:
-				res, resp := s.HandleAppendEntry(appendEntry.request)
-				if !resp.Success {
-					log.Println("[DEBUG] can't accept AppendEntry RPC")
-				} else {
-					st = fromFollower(res)
-					log.Println("[INFO] became follower from candidate state")
-				}
+				f, resp := s.HandleAppendEntry(appendEntry.request)
 				appendEntry.response <- resp
+				if f != nil {
+					log.Println(fmt.Sprintf("[INFO][Term: %v] became follower from candidate state", f.Term()))
+					st = fromFollower(f)
+				}
 			case *kv_go.Leader:
-				res, resp := s.HandleAppendEntry(appendEntry.request)
-				if !resp.Success {
-					log.Println("[DEBUG] can't accept AppendEntry RPC")
-				} else {
-					st = fromFollower(res)
-					log.Println("[INFO] became follower from leader state")
-				}
+				f, resp := s.HandleAppendEntry(appendEntry.request)
 				appendEntry.response <- resp
+				if f != nil {
+					log.Println(fmt.Sprintf("[INFO][Term: %v] became follower from leader state", f.Term()))
+					st = fromFollower(f)
+				}
 			default:
 				log.Println("[ERROR] unknown type in appendEntries section")
 				return
@@ -116,30 +114,35 @@ func (r *Raft) Start() {
 		case vote := <-r.votes:
 			switch s := st.s.(type) {
 			case *kv_go.Follower:
-				resp := s.HandleVote(vote.request)
-				if resp.VoteGranted {
-					log.Println(fmt.Sprintf("[INFO] granted vote for %v", vote.request.CandidateId))
-				} else {
-					log.Println(fmt.Sprintf("[TRACE] vote is not granted for %v", vote.request.CandidateId))
-				}
+				f, resp := s.HandleVote(vote.request)
 				vote.response <- resp
+				if f != nil {
+					log.Println(fmt.Sprintf("[INFO][Term: %v] follow for new leader", f.Term()))
+					if resp.VoteGranted {
+						log.Println(fmt.Sprintf("[INFO] granted vote for %v", f.VoteFor()))
+					}
+					st = fromFollower(f)
+				}
 			case *kv_go.Candidate:
-				res, resp := s.HandleVote(vote.request)
-				if resp.VoteGranted {
-					log.Println(fmt.Sprintf("[INFO] granted vote for %v and became follower", vote.request.CandidateId))
-					st = fromFollower(res)
-				} else {
-					log.Println(fmt.Sprintf("[TRACE] skip vote requests for other candidates"))
-				}
+				f, resp := s.HandleVote(vote.request)
 				vote.response <- resp
+				if f != nil {
+					log.Println(fmt.Sprintf("[INFO][Term: %v] became follower from candidate state", f.Term()))
+					if resp.VoteGranted {
+						log.Println(fmt.Sprintf("[INFO] granted vote for %v", f.VoteFor()))
+					}
+					st = fromFollower(f)
+				}
 			case *kv_go.Leader:
-				resp := s.HandleVote(vote.request)
-				if resp.VoteGranted {
-					log.Println(fmt.Sprintf("[INFO] granted vote for %v", vote.request.CandidateId))
-				} else {
-					log.Println(fmt.Sprintf("[TRACE] vote is not granted for %v", vote.request.CandidateId))
-				}
+				f, resp := s.HandleVote(vote.request)
 				vote.response <- resp
+				if f != nil {
+					log.Println(fmt.Sprintf("[INFO][Term: %v] became follower from leader state", f.Term()))
+					if resp.VoteGranted {
+						log.Println(fmt.Sprintf("[INFO] granted vote for %v", f.VoteFor()))
+					}
+					st = fromFollower(f)
+				}
 			default:
 				log.Println("[ERROR] unknown type in votes section")
 				return
@@ -149,29 +152,33 @@ func (r *Raft) Start() {
 			case *kv_go.Follower:
 				log.Println("[TRACE] skip vote response for follower")
 			case *kv_go.Candidate:
-				res, err := s.HandleVoteResponse(voteResp, r)
-				if err != nil {
-					log.Println(fmt.Sprintf("[TRACE] can't became a leader yet: %s", err))
-					continue
+				l, f := s.HandleVoteResponse(voteResp, r)
+				if f != nil {
+					log.Println(fmt.Sprintf("[INFO][Term: %v] became follower from candidate state", f.Term()))
+					st = fromFollower(f)
 				}
-				log.Println("[INFO] became a leader")
-				st = fromLeader(res)
+				if l != nil {
+					log.Println(fmt.Sprintf("[INFO][Term: %v] became a leader", l.Term()))
+					st = fromLeader(l)
+				}
 			case *kv_go.Leader:
 				log.Println("[TRACE] skip vote response for leader")
 			default:
 				log.Println("[ERROR] unknown type in voteResponse section")
 				return
 			}
+		case _ = <-r.appendEntryResponses:
+			// skip
 		case <-st.t:
 			log.Println("[INFO] timeout")
 			switch s := st.s.(type) {
 			case *kv_go.Follower:
 				res := s.HandleElectionTimeout(r)
-				log.Println("[INFO] follower became a candidate after election timeout")
+				log.Println(fmt.Sprintf("[INFO][Term: %v] follower became a candidate after election timeout", res.Term()))
 				st = fromCandidate(&res)
 			case *kv_go.Candidate:
 				res := s.HandleElectionTimeout(r)
-				log.Println("[INFO] candidate starts new round after election timeout")
+				log.Println(fmt.Sprintf("[INFO][Term: %v] candidate starts new round after election timeout", res.Term()))
 				st = fromCandidate(&res)
 			case *kv_go.Leader:
 				s.SendHeartbeat(r)

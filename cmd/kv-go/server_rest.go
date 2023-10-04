@@ -113,6 +113,7 @@ func (r *Raft) HandleVoteRequest(receiverId int, request kv_go.VoteRequest) {
 		}
 
 		resp.Id = receiverId
+		resp.RequestInTerm = request.Term
 		r.voteResponses <- resp
 	}()
 }

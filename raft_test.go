@@ -18,17 +18,86 @@ func TestFollower_BecameCandidateIfNoLeadersHeartbeat(t *testing.T) {
 	}
 }
 
-func TestFollower_UpdateCurrentTermOnAppendEntryRequest(t *testing.T) {
+func TestFollower_RejectVoteRequestWithSmallerTerm(t *testing.T) {
+	f := MakeFollower(makeConfig(5), 1)
+	newF, resp := f.HandleVote(VoteRequest{Term: 0, CandidateId: 1})
+	if resp.VoteGranted {
+		t.Fatalf("Follower should reject request with smaller term")
+	}
+	if resp.Term != f.Term() {
+		t.Fatalf("Follower should reply with his term")
+	}
+	if newF != nil {
+		t.Fatalf("Follower should not change his state")
+	}
+}
+
+func TestFollower_RejectVoteRequestWithEqualTerm(t *testing.T) {
+	f := MakeFollower(makeConfig(5), 1)
+	newF, resp := f.HandleVote(VoteRequest{Term: 1, CandidateId: 1})
+	if resp.VoteGranted {
+		t.Fatalf("Follower should reject request with equal term")
+	}
+	if resp.Term != f.Term() {
+		t.Fatalf("Follower should reply with his term")
+	}
+	if newF != nil {
+		t.Fatalf("Follower should not change his state")
+	}
+}
+
+func TestFollower_AcceptVoteRequestWithHigherTerm(t *testing.T) {
+	f := MakeFollower(makeConfig(5), 1)
+	req := VoteRequest{Term: 2, CandidateId: 1}
+	newF, resp := f.HandleVote(req)
+	if !resp.VoteGranted {
+		t.Fatalf("Follower should accept request with higher term")
+	}
+	if newF == nil || newF.term != req.Term {
+		t.Fatalf("Follower should update his term from requset")
+	}
+	if newF.votedFor != req.CandidateId {
+		t.Fatalf("Follower should safe his vote")
+	}
+	if resp.Term != newF.Term() {
+		t.Fatalf("Follower should reply with his term")
+	}
+}
+
+func TestFollower_RejectAppendEntryRequestWithSmallerTerm(t *testing.T) {
 	f := MakeFollower(makeConfig(5), 1)
 
-	if resp := f.HandleAppendEntry(AppendEntryRequest{Term: 0}); resp.Success {
-		t.Fatalf("Follower can't accept smaller term")
+	newF, resp := f.HandleAppendEntry(AppendEntryRequest{Term: 0})
+	if resp.Success {
+		t.Fatalf("Follower should reject requset with equal term")
 	}
+	if newF != nil {
+		t.Fatalf("Follower should not change his state")
+	}
+}
 
-	entry := AppendEntryRequest{Term: 1}
-	_ = f.HandleAppendEntry(entry)
-	if f.Term() != entry.Term {
-		t.Fatalf("Follower should accept higher term")
+func TestFollower_AcceptAppendEntryWithEqualTerm(t *testing.T) {
+	f := MakeFollower(makeConfig(5), 1)
+
+	newF, resp := f.HandleAppendEntry(AppendEntryRequest{Term: 1})
+	if !resp.Success {
+		t.Fatalf("Follower should accept requset with equal term")
+	}
+	if newF != nil {
+		t.Fatalf("Follower should not update his state if accept euqal term")
+	}
+}
+
+func TestFollower_AcceptAppendEntryWithHigherTerm(t *testing.T) {
+	f := MakeFollower(makeConfig(5), 1)
+
+	req := AppendEntryRequest{Term: 2}
+	newF, resp := f.HandleAppendEntry(req)
+	if !resp.Success {
+		t.Fatalf("Follower should accept requset with equal term")
+	}
+	if newF == nil || newF.term != req.Term {
+		t.Fatalf("Follower should update his term from requset")
 	}
 }
 
@@ -44,15 +113,58 @@ func TestCandidate_StartNewElectionAfterTimeout(t *testing.T) {
 	}
 }
 
-// A candidate starts new election using max term value getting from response vote
-func TestCandidate_StartNewElectionWithHighestTerm(t *testing.T) {
+func TestCandidate_BecameFollowerWhenVoteResponseContainHigherTerm(t *testing.T) {
 	c := MakeCandidate(makeConfig(5), 0)
 	vote := VoteResponse{Id: 1, Term: 1, VoteGranted: false}
-	_, _ = c.HandleVoteResponse(vote, makeAppendRequestHandlerMock())
+	_, f := c.HandleVoteResponse(vote, makeAppendRequestHandlerMock())
+	if f == nil {
+		t.Fatalf("Candidate should became a follower after getting response with higer term")
+	}
+	if f.Term() != vote.Term {
+		t.Fatalf("Follower should get his term from request")
+	}
+}
 
-	cNew := c.HandleElectionTimeout(makeVoteRequestHandlerMock())
-	if vote.Term+1 != cNew.Term() {
-		t.Fatalf("Candidate should use higest term from VoteResponse")
+func TestCandidate_IgnoreVoteRequestWithSmallerTerm(t *testing.T) {
+	c := MakeCandidate(makeConfig(5), 1)
+	req := VoteRequest{Term: 0, CandidateId: 1}
+	f, resp := c.HandleVote(req)
+
+	if f != nil {
+		t.Fatalf("Candidate should not change his state")
+	}
+	if resp.VoteGranted {
+		t.Fatalf("Candidate should not granted vote")
+	}
+	if resp.Term != c.Term() {
+		t.Fatalf("VoteResponse should has candidates' term")
+	}
+}
+
+func TestCandidate_BecameFollowerWhenVoteRequestContainHigherTerm(t *testing.T) {
+	c := MakeCandidate(makeConfig(5), 0)
+	req := VoteRequest{Term: 1, CandidateId: 1}
+	f, resp := c.HandleVote(req)
+	if f == nil {
+		t.Fatalf("Candidate should became a follower after getting requset with higer term")
+	}
+	if f.Term() != req.Term {
+		t.Fatalf("Follower should get his term from request")
+	}
+	if !resp.VoteGranted {
+		t.Fatalf("Candidate should grant his vote to candidate with higher term")
+	}
+	if f.votedFor != req.CandidateId {
+		t.Fatalf("Candidate should save votedFor in next state")
+	}
+}
+
+func TestCandidate_IgnoreVoteResponseFromPreviousTerm(t *testing.T) {
+	c := MakeCandidate(makeConfig(5), 2)
+	vote := VoteResponse{Id: 1, RequestInTerm: 1, Term: 1, VoteGranted: true}
+	_, _ = c.HandleVoteResponse(vote, makeAppendRequestHandlerMock())
+	if c.grantedVotes != 1 {
+		t.Fatalf("Candidate should ingore response from previous term")
 	}
 }
 
@@ -106,6 +218,52 @@ func TestLeader_BecameFollowerWhenAnotherLeaderAppeared(t *testing.T) {
 	}
 	if f, _ := l.HandleAppendEntry(AppendEntryRequest{Term: 2}); f == nil {
 		t.Fatalf("Leader should became a follower after getting greater term")
+	}
+}
+
+func TestLeader_RejectVoteRequestWithSmallerTerm(t *testing.T) {
+	l := MakeLeader(makeConfig(5), 1)
+	f, resp := l.HandleVote(VoteRequest{Term: 0, CandidateId: 1})
+	if resp.VoteGranted {
+		t.Fatalf("Leader should reject request with smaller term")
+	}
+	if resp.Term != l.Term() {
+		t.Fatalf("Leader should reply with his term")
+	}
+	if f != nil {
+		t.Fatalf("Leader should not change his state")
+	}
+}
+
+func TestLeader_RejectVoteRequestWithEqualTerm(t *testing.T) {
+	l := MakeLeader(makeConfig(5), 1)
+	f, resp := l.HandleVote(VoteRequest{Term: 1, CandidateId: 1})
+	if resp.VoteGranted {
+		t.Fatalf("Follower should reject request with equal term")
+	}
+	if resp.Term != l.Term() {
+		t.Fatalf("Follower should reply with his term")
+	}
+	if f != nil {
+		t.Fatalf("Follower should not change his state")
+	}
+}
+
+func TestLeader_BecameFollowerWhenAcceptVoteRequestWithHigherTerm(t *testing.T) {
+	l := MakeLeader(makeConfig(5), 1)
+	req := VoteRequest{Term: 2, CandidateId: 1}
+	f, resp := l.HandleVote(req)
+	if !resp.VoteGranted {
+		t.Fatalf("Leader should accept request with higher term")
+	}
+	if f == nil || f.term != req.Term {
+		t.Fatalf("Leader should update his term from requset")
+	}
+	if f.votedFor != req.CandidateId {
+		t.Fatalf("Follower should safe his vote")
+	}
+	if resp.Term != l.Term() {
+		t.Fatalf("Leader should reply with his term")
 	}
 }
 
