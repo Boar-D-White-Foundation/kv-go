@@ -1,4 +1,4 @@
-package kv_go
+package kvgo
 
 import (
 	"testing"

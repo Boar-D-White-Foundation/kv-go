@@ -3,16 +3,20 @@ package main
 import (
 	"flag"
 	"fmt"
-	kv_go "github.com/Boar-D-White-Foundation/kv-go"
-	"log"
+	"github.com/Boar-D-White-Foundation/kvgo"
+	"log/slog"
 	"strings"
 )
 
 func main() {
-	log.Println("hello!")
+	slog.Info("hello!")
 
-	config := parseConfig()
-	raft := MakeRaftService(config)
+	config, err := parseConfig()
+	if err != nil {
+		slog.Error("can't parse config", "error", err)
+		return
+	}
+	raft := MakeRaftService(*config)
 
 	go func() {
 		raft.StartHttpServer()
@@ -20,19 +24,19 @@ func main() {
 	}()
 
 	raft.Start()
-	log.Println("server stopped")
+	slog.Info("server stopped")
 }
 
-func parseConfig() kv_go.Config {
+func parseConfig() (*kvgo.Config, error) {
 	portParam := flag.String("port", "", "current port")
 	clusterParam := flag.String("cluster", "", "all ports in cluster")
 
 	flag.Parse()
 	if *portParam == "" {
-		log.Fatalf("you need to pass port: --port=33001")
+		return nil, fmt.Errorf("you need to pass port: --port=33001")
 	}
 	if *clusterParam == "" {
-		log.Fatalf("you need to pass cluster: --cluster=33001,33002,33003")
+		return nil, fmt.Errorf("you need to pass cluster: --cluster=33001,33002,33003")
 	}
 
 	currentId := -1
@@ -47,14 +51,14 @@ func parseConfig() kv_go.Config {
 	}
 
 	if currentId < 0 {
-		log.Fatalf("not found current port in cluster")
+		return nil, fmt.Errorf("not found current port in cluster")
 	}
 
-	return kv_go.Config{
+	return &kvgo.Config{
 		ElectionTimeoutMax: 30000,
 		ElectionTimeoutMin: 15000,
 		LeaderHeartbeat:    1000,
 		CurrentId:          currentId,
 		Cluster:            cluster,
-	}
+	}, nil
 }

@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	kv_go "github.com/Boar-D-White-Foundation/kv-go"
+	"github.com/Boar-D-White-Foundation/kvgo"
 	"github.com/gin-gonic/gin"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 )
 
@@ -18,19 +18,19 @@ func (r *Raft) StartHttpServer() {
 
 	err := router.Run(r.cfg.Cluster[r.cfg.CurrentId])
 	if err != nil {
-		log.Println(fmt.Sprintf("[ERROR] router finished with error: %s"), err)
+		slog.Error("router finished with error", "error", err)
 	}
 }
 
 func (r *Raft) postAppendEntryRequest(c *gin.Context) {
-	var request kv_go.AppendEntryRequest
+	var request kvgo.AppendEntryRequest
 	if err := c.BindJSON(&request); err != nil {
-		log.Println(fmt.Sprintf("[ERROR] can't read request body: %s", err))
+		slog.Error("can't read request body", "error", err)
 	}
 
 	message := appendEntryMessage{
 		request:  request,
-		response: make(chan kv_go.AppendEntryResponse),
+		response: make(chan kvgo.AppendEntryResponse),
 	}
 
 	r.appendEntries <- message
@@ -39,14 +39,14 @@ func (r *Raft) postAppendEntryRequest(c *gin.Context) {
 }
 
 func (r *Raft) postVoteRequest(c *gin.Context) {
-	var request kv_go.VoteRequest
+	var request kvgo.VoteRequest
 	if err := c.BindJSON(&request); err != nil {
-		log.Println(fmt.Sprintf("[ERROR] can't read request body: %s", err))
+		slog.Error("can't read request body", "error", err)
 	}
 
 	message := voteMessage{
 		request:  request,
-		response: make(chan kv_go.VoteResponse),
+		response: make(chan kvgo.VoteResponse),
 	}
 
 	r.votes <- message
@@ -54,30 +54,30 @@ func (r *Raft) postVoteRequest(c *gin.Context) {
 	c.IndentedJSON(http.StatusOK, &response)
 }
 
-func (r *Raft) HandleAppendEntryRequest(receiverId int, request kv_go.AppendEntryRequest) {
+func (r *Raft) HandleAppendEntryRequest(receiverId int, request kvgo.AppendEntryRequest) {
 	go func() {
 		url := fmt.Sprintf("http://%s/appendEntryRequest", r.cfg.Cluster[receiverId])
 		requestBody, err := json.Marshal(&request)
 		if err != nil {
-			log.Println(fmt.Errorf("[ERROR] can't marshal AppendEntryRequest: %s", err))
+			slog.Error("can't marshal AppendEntryRequest", "error", err)
 			return
 		}
 		response, err := http.Post(url, "application/json", bytes.NewReader(requestBody))
 		if err != nil {
-			log.Println(fmt.Errorf("[ERROR] can't send AppendEntryRequest: %s", err))
+			slog.Error("can't send AppendEntryRequest", "error", err)
 			return
 		}
 
 		body, err := io.ReadAll(response.Body)
 		if err != nil {
-			log.Println(fmt.Errorf("[ERROR] can't read AppendEntryResponse body: %s", err))
+			slog.Error("can't read AppendEntryResponse body", "error", err)
 			return
 		}
 
-		var resp kv_go.AppendEntryResponse
+		var resp kvgo.AppendEntryResponse
 		err = json.Unmarshal(body, &resp)
 		if err != nil {
-			log.Println(fmt.Errorf("[ERROR] can't unmarshal AppendEntryResponse body: %s", err))
+			slog.Error("can't unmarshal AppendEntryResponse body", "error", err)
 			return
 		}
 
@@ -85,30 +85,30 @@ func (r *Raft) HandleAppendEntryRequest(receiverId int, request kv_go.AppendEntr
 	}()
 }
 
-func (r *Raft) HandleVoteRequest(receiverId int, request kv_go.VoteRequest) {
+func (r *Raft) HandleVoteRequest(receiverId int, request kvgo.VoteRequest) {
 	go func() {
 		url := fmt.Sprintf("http://%s/voteRequest", r.cfg.Cluster[receiverId])
 		requestBody, err := json.Marshal(&request)
 		if err != nil {
-			log.Println(fmt.Errorf("[ERROR] can't marshal VoteRequest: %s", err))
+			slog.Error("can't marshal VoteRequest", "error", err)
 			return
 		}
 		response, err := http.Post(url, "application/json", bytes.NewReader(requestBody))
 		if err != nil {
-			log.Println(fmt.Errorf("[ERROR] can't send VoteRequest: %s", err))
+			slog.Error("can't send VoteRequest", "error", err)
 			return
 		}
 
 		body, err := io.ReadAll(response.Body)
 		if err != nil {
-			log.Println(fmt.Errorf("[ERROR] can't read VoteResponse body: %s", err))
+			slog.Error("can't read VoteResponse body", "error", err)
 			return
 		}
 
-		var resp kv_go.VoteResponse
+		var resp kvgo.VoteResponse
 		err = json.Unmarshal(body, &resp)
 		if err != nil {
-			log.Println(fmt.Errorf("[ERROR] can't unmarshal VoteResponse body: %s", err))
+			slog.Error("can't unmarshal VoteResponse body", "error", err)
 			return
 		}
 
