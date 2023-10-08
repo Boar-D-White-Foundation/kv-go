@@ -11,7 +11,39 @@ import (
 	"net/http"
 )
 
-func (r *Raft) StartHttpServer() {
+type appendEntryRequestDto struct {
+	Id   int    `json:"id"`
+	Term uint64 `json:"term"`
+}
+
+type appendEntryResponseDto struct {
+	Term    uint64 `json:"term"`
+	Success bool   `json:"success"`
+}
+
+type voteRequestDto struct {
+	Term        uint64 `json:"term"`
+	CandidateId int    `json:"candidateId"`
+}
+
+type voteResponseDto struct {
+	Term        uint64 `json:"term"`
+	VoteGranted bool   `json:"voteGranted"`
+}
+
+type restServer struct {
+	cfg  *kvgo.Config
+	raft *kvgo.Raft
+}
+
+func makeRestServer(cfg *kvgo.Config, raft *kvgo.Raft) restServer {
+	return restServer{
+		cfg:  cfg,
+		raft: raft,
+	}
+}
+
+func (r *restServer) StartHttpServer() {
 	router := gin.Default()
 	router.POST("/appendEntryRequest", r.postAppendEntryRequest)
 	router.POST("/voteRequest", r.postVoteRequest)
@@ -22,42 +54,59 @@ func (r *Raft) StartHttpServer() {
 	}
 }
 
-func (r *Raft) postAppendEntryRequest(c *gin.Context) {
-	var request kvgo.AppendEntryRequest
+func (r *restServer) postAppendEntryRequest(c *gin.Context) {
+	var request appendEntryRequestDto
 	if err := c.BindJSON(&request); err != nil {
 		slog.Error("can't read request body", "error", err)
 	}
 
-	message := appendEntryMessage{
-		request:  request,
-		response: make(chan kvgo.AppendEntryResponse),
+	message := kvgo.AppendEntryMessage{
+		Request: kvgo.AppendEntryRequest{
+			Id:         request.Id,
+			ReceiverId: r.cfg.CurrentId,
+			Term:       request.Term,
+		},
+		Response: make(chan kvgo.AppendEntryResponse),
 	}
 
-	r.appendEntries <- message
-	response := <-message.response
-	c.IndentedJSON(http.StatusOK, &response)
+	r.raft.SendAppendEntryMessage(message)
+	response := <-message.Response
+	c.IndentedJSON(http.StatusOK, &appendEntryResponseDto{
+		Term:    response.Term,
+		Success: response.Success,
+	})
 }
 
-func (r *Raft) postVoteRequest(c *gin.Context) {
-	var request kvgo.VoteRequest
+func (r *restServer) postVoteRequest(c *gin.Context) {
+	var request voteRequestDto
 	if err := c.BindJSON(&request); err != nil {
 		slog.Error("can't read request body", "error", err)
 	}
 
-	message := voteMessage{
-		request:  request,
-		response: make(chan kvgo.VoteResponse),
+	message := kvgo.VoteMessage{
+		Request: kvgo.VoteRequest{
+			ReceiverId:  r.cfg.CurrentId,
+			Term:        request.Term,
+			CandidateId: request.CandidateId,
+		},
+		Response: make(chan kvgo.VoteResponse),
 	}
 
-	r.votes <- message
-	response := <-message.response
-	c.IndentedJSON(http.StatusOK, &response)
+	r.raft.SendVoteMessage(message)
+	response := <-message.Response
+	c.IndentedJSON(http.StatusOK, &voteResponseDto{
+		Term:        response.Term,
+		VoteGranted: response.VoteGranted,
+	})
 }
 
-func (r *Raft) HandleAppendEntryRequest(receiverId int, request kvgo.AppendEntryRequest) {
+func (r *restServer) HandleAppendEntryRequest(request kvgo.AppendEntryRequest) {
 	go func() {
-		url := fmt.Sprintf("http://%s/appendEntryRequest", r.cfg.Cluster[receiverId])
-		requestBody, err := json.Marshal(&request)
+		url := fmt.Sprintf("http://%s/appendEntryRequest", r.cfg.Cluster[request.ReceiverId])
+		requestBody, err := json.Marshal(&appendEntryRequestDto{
+			Id:   request.Id,
+			Term: request.Term,
+		})
 		if err != nil {
 			slog.Error("can't marshal AppendEntryRequest", "error", err)
 			return
@@ -74,21 +123,27 @@ func (r *Raft) HandleAppendEntryRequest(receiverId int, request kvgo.AppendEntry
 			return
 		}
 
-		var resp kvgo.AppendEntryResponse
+		var resp appendEntryResponseDto
 		err = json.Unmarshal(body, &resp)
 		if err != nil {
 			slog.Error("can't unmarshal AppendEntryResponse body", "error", err)
 			return
 		}
 
-		r.appendEntryResponses <- resp
+		r.raft.SendAppendEntryResponse(kvgo.AppendEntryResponse{
+			Term:    resp.Term,
+			Success: resp.Success,
+		})
 	}()
 }
 
-func (r *Raft) HandleVoteRequest(receiverId int, request kvgo.VoteRequest) {
+func (r *restServer) HandleVoteRequest(request kvgo.VoteRequest) {
 	go func() {
-		url := fmt.Sprintf("http://%s/voteRequest", r.cfg.Cluster[receiverId])
-		requestBody, err := json.Marshal(&request)
+		url := fmt.Sprintf("http://%s/voteRequest", r.cfg.Cluster[request.ReceiverId])
+		requestBody, err := json.Marshal(&voteRequestDto{
+			Term:        request.Term,
+			CandidateId: request.CandidateId,
+		})
 		if err != nil {
 			slog.Error("can't marshal VoteRequest", "error", err)
 			return
@@ -105,15 +160,18 @@ func (r *Raft) HandleVoteRequest(receiverId int, request kvgo.VoteRequest) {
 			return
 		}
 
-		var resp kvgo.VoteResponse
+		var resp voteResponseDto
 		err = json.Unmarshal(body, &resp)
 		if err != nil {
 			slog.Error("can't unmarshal VoteResponse body", "error", err)
 			return
 		}
 
-		resp.Id = receiverId
-		resp.RequestInTerm = request.Term
-		r.voteResponses <- resp
+		r.raft.SendVoteResponse(kvgo.VoteResponse{
+			Id:            request.ReceiverId,
+			RequestInTerm: request.Term,
+			Term:          resp.Term,
+			VoteGranted:   resp.VoteGranted,
+		})
 	}()
 }

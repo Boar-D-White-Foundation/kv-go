@@ -4,8 +4,10 @@ import (
 	"flag"
 	"fmt"
 	"github.com/Boar-D-White-Foundation/kvgo"
+	"github.com/Boar-D-White-Foundation/kvgo/internal/rtimer"
 	"log/slog"
 	"strings"
+	"time"
 )
 
 func main() {
@@ -16,14 +18,21 @@ func main() {
 		slog.Error("can't parse config", "error", err)
 		return
 	}
-	raft := MakeRaftService(*config)
+
+	raft := kvgo.MakeRaft(*config, rtimer.Default())
+	rest := makeRestServer(config, &raft)
+	raft.SetHandler(&rest)
 
 	go func() {
-		raft.StartHttpServer()
+		rest.StartHttpServer()
 		raft.Stop()
 	}()
 
-	raft.Start()
+	err = raft.Start()
+	if err != nil {
+		slog.Error("raft fatal error", "error", err)
+		return
+	}
 	slog.Info("server stopped")
 }
 
@@ -55,9 +64,9 @@ func parseConfig() (*kvgo.Config, error) {
 	}
 
 	return &kvgo.Config{
-		ElectionTimeoutMax: 30000,
-		ElectionTimeoutMin: 15000,
-		LeaderHeartbeat:    1000,
+		ElectionTimeoutMax: 30000 * time.Millisecond,
+		ElectionTimeoutMin: 15000 * time.Millisecond,
+		LeaderHeartbeat:    1000 * time.Millisecond,
 		CurrentId:          currentId,
 		Cluster:            cluster,
 	}, nil

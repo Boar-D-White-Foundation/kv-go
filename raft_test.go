@@ -11,7 +11,7 @@ import (
 // To begin an election, a follower increments its current term and transitions to candidate state.
 func TestFollower_BecameCandidateIfNoLeadersHeartbeat(t *testing.T) {
 	f := MakeFollower(makeConfig(5), 0)
-	c := f.HandleElectionTimeout(makeVoteRequestHandlerMock())
+	c := f.HandleElectionTimeout(makeRequestHandlerMock())
 
 	if f.Term()+1 != c.Term() {
 		t.Fatalf("Follower should increment its term")
@@ -22,7 +22,7 @@ func TestFollower_RejectVoteRequestWithSmallerTerm(t *testing.T) {
 	f := MakeFollower(makeConfig(5), 1)
 	newF, resp := f.HandleVote(VoteRequest{Term: 0, CandidateId: 1})
 	if resp.VoteGranted {
-		t.Fatalf("Follower should reject request with smaller term")
+		t.Fatalf("Follower should reject Request with smaller term")
 	}
 	if resp.Term != f.Term() {
 		t.Fatalf("Follower should reply with his term")
@@ -36,7 +36,7 @@ func TestFollower_RejectVoteRequestWithEqualTerm(t *testing.T) {
 	f := MakeFollower(makeConfig(5), 1)
 	newF, resp := f.HandleVote(VoteRequest{Term: 1, CandidateId: 1})
 	if resp.VoteGranted {
-		t.Fatalf("Follower should reject request with equal term")
+		t.Fatalf("Follower should reject Request with equal term")
 	}
 	if resp.Term != f.Term() {
 		t.Fatalf("Follower should reply with his term")
@@ -51,7 +51,7 @@ func TestFollower_AcceptVoteRequestWithHigherTerm(t *testing.T) {
 	req := VoteRequest{Term: 2, CandidateId: 1}
 	newF, resp := f.HandleVote(req)
 	if !resp.VoteGranted {
-		t.Fatalf("Follower should accept request with higher term")
+		t.Fatalf("Follower should accept Request with higher term")
 	}
 	if newF == nil || newF.term != req.Term {
 		t.Fatalf("Follower should update his term from requset")
@@ -107,7 +107,7 @@ func TestFollower_AcceptAppendEntryWithHigherTerm(t *testing.T) {
 // and initiating another round of RequestVote RPCs.
 func TestCandidate_StartNewElectionAfterTimeout(t *testing.T) {
 	c := MakeCandidate(makeConfig(5), 0)
-	cNew := c.HandleElectionTimeout(makeVoteRequestHandlerMock())
+	cNew := c.HandleElectionTimeout(makeRequestHandlerMock())
 	if c.Term()+1 != cNew.Term() {
 		t.Fatalf("Candidate should increment its term before starting new election round")
 	}
@@ -116,12 +116,12 @@ func TestCandidate_StartNewElectionAfterTimeout(t *testing.T) {
 func TestCandidate_BecameFollowerWhenVoteResponseContainHigherTerm(t *testing.T) {
 	c := MakeCandidate(makeConfig(5), 0)
 	vote := VoteResponse{Id: 1, Term: 1, VoteGranted: false}
-	_, f := c.HandleVoteResponse(vote, makeAppendRequestHandlerMock())
+	_, f := c.HandleVoteResponse(vote, makeRequestHandlerMock())
 	if f == nil {
-		t.Fatalf("Candidate should became a follower after getting response with higer term")
+		t.Fatalf("Candidate should became a follower after getting Response with higer term")
 	}
 	if f.Term() != vote.Term {
-		t.Fatalf("Follower should get his term from request")
+		t.Fatalf("Follower should get his term from Request")
 	}
 }
 
@@ -149,7 +149,7 @@ func TestCandidate_BecameFollowerWhenVoteRequestContainHigherTerm(t *testing.T) 
 		t.Fatalf("Candidate should became a follower after getting requset with higer term")
 	}
 	if f.Term() != req.Term {
-		t.Fatalf("Follower should get his term from request")
+		t.Fatalf("Follower should get his term from Request")
 	}
 	if !resp.VoteGranted {
 		t.Fatalf("Candidate should grant his vote to candidate with higher term")
@@ -162,9 +162,9 @@ func TestCandidate_BecameFollowerWhenVoteRequestContainHigherTerm(t *testing.T) 
 func TestCandidate_IgnoreVoteResponseFromPreviousTerm(t *testing.T) {
 	c := MakeCandidate(makeConfig(5), 2)
 	vote := VoteResponse{Id: 1, RequestInTerm: 1, Term: 1, VoteGranted: true}
-	_, _ = c.HandleVoteResponse(vote, makeAppendRequestHandlerMock())
+	_, _ = c.HandleVoteResponse(vote, makeRequestHandlerMock())
 	if c.grantedVotes != 1 {
-		t.Fatalf("Candidate should ingore response from previous term")
+		t.Fatalf("Candidate should ingore Response from previous term")
 	}
 }
 
@@ -172,10 +172,10 @@ func TestCandidate_IgnoreVoteResponseFromPreviousTerm(t *testing.T) {
 // Each server will vote for at most one candidate in a given term, on a first-come-first-served basis
 func TestCandidate_BecameLeaderAfterGettingMajorityVotes(t *testing.T) {
 	c := MakeCandidate(makeConfig(5), 0)
-	if l, _ := c.HandleVoteResponse(VoteResponse{Id: 1, VoteGranted: true}, makeAppendRequestHandlerMock()); l != nil {
+	if l, _ := c.HandleVoteResponse(VoteResponse{Id: 1, VoteGranted: true}, makeRequestHandlerMock()); l != nil {
 		t.Fatalf("Candidate can't became a leader before getting mejority votes")
 	}
-	if l, _ := c.HandleVoteResponse(VoteResponse{Id: 2, VoteGranted: true}, makeAppendRequestHandlerMock()); l == nil {
+	if l, _ := c.HandleVoteResponse(VoteResponse{Id: 2, VoteGranted: true}, makeRequestHandlerMock()); l == nil {
 		t.Fatalf("Candidate should became a leader after getting mejority votes")
 	}
 }
@@ -183,9 +183,9 @@ func TestCandidate_BecameLeaderAfterGettingMajorityVotes(t *testing.T) {
 // Upon election: leader send initial empty AppendEntries RPCs (heartbeat) to each server
 func TestCandidate_SendHeartbeatAfterBecameLeader(t *testing.T) {
 	c := MakeCandidate(makeConfig(3), 0)
-	mock := makeAppendRequestHandlerMock()
+	mock := makeRequestHandlerMock()
 	_, _ = c.HandleVoteResponse(VoteResponse{Id: 1, VoteGranted: true}, mock)
-	if len(mock.m) != 2 {
+	if len(mock.mAppendEntries) != 2 {
 		t.Fatalf("Leader should send heatbeat to all his followers")
 	}
 }
@@ -225,7 +225,7 @@ func TestLeader_RejectVoteRequestWithSmallerTerm(t *testing.T) {
 	l := MakeLeader(makeConfig(5), 1)
 	f, resp := l.HandleVote(VoteRequest{Term: 0, CandidateId: 1})
 	if resp.VoteGranted {
-		t.Fatalf("Leader should reject request with smaller term")
+		t.Fatalf("Leader should reject Request with smaller term")
 	}
 	if resp.Term != l.Term() {
 		t.Fatalf("Leader should reply with his term")
@@ -239,7 +239,7 @@ func TestLeader_RejectVoteRequestWithEqualTerm(t *testing.T) {
 	l := MakeLeader(makeConfig(5), 1)
 	f, resp := l.HandleVote(VoteRequest{Term: 1, CandidateId: 1})
 	if resp.VoteGranted {
-		t.Fatalf("Follower should reject request with equal term")
+		t.Fatalf("Follower should reject Request with equal term")
 	}
 	if resp.Term != l.Term() {
 		t.Fatalf("Follower should reply with his term")
@@ -254,7 +254,7 @@ func TestLeader_BecameFollowerWhenAcceptVoteRequestWithHigherTerm(t *testing.T) 
 	req := VoteRequest{Term: 2, CandidateId: 1}
 	f, resp := l.HandleVote(req)
 	if !resp.VoteGranted {
-		t.Fatalf("Leader should accept request with higher term")
+		t.Fatalf("Leader should accept Request with higher term")
 	}
 	if f == nil || f.term != req.Term {
 		t.Fatalf("Leader should update his term from requset")
@@ -279,30 +279,22 @@ func makeConfig(clusterSize int) *Config {
 	}
 }
 
-type appendRequestHandlerMock struct {
-	m map[int]AppendEntryRequest
+type requestHandlerMock struct {
+	mAppendEntries map[int]AppendEntryRequest
+	mVotes         map[int]VoteRequest
 }
 
-func makeAppendRequestHandlerMock() *appendRequestHandlerMock {
-	return &appendRequestHandlerMock{
-		m: make(map[int]AppendEntryRequest),
+func makeRequestHandlerMock() *requestHandlerMock {
+	return &requestHandlerMock{
+		mAppendEntries: make(map[int]AppendEntryRequest),
+		mVotes:         make(map[int]VoteRequest),
 	}
 }
 
-func (mock *appendRequestHandlerMock) HandleAppendEntryRequest(receiverId int, r AppendEntryRequest) {
-	mock.m[receiverId] = r
+func (mock *requestHandlerMock) HandleAppendEntryRequest(r AppendEntryRequest) {
+	mock.mAppendEntries[r.ReceiverId] = r
 }
 
-type voteRequestHandlerMock struct {
-	m map[int]VoteRequest
-}
-
-func makeVoteRequestHandlerMock() *voteRequestHandlerMock {
-	return &voteRequestHandlerMock{
-		m: make(map[int]VoteRequest),
-	}
-}
-
-func (mock *voteRequestHandlerMock) HandleVoteRequest(receiverId int, r VoteRequest) {
-	mock.m[receiverId] = r
+func (mock *requestHandlerMock) HandleVoteRequest(r VoteRequest) {
+	mock.mVotes[r.ReceiverId] = r
 }
