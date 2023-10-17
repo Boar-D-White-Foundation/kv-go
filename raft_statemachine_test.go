@@ -29,7 +29,7 @@ func TestRaft_FromCandidateToLeaderHappyPath(t *testing.T) {
 	for i := 0; i < len(cfg.Cluster)-1; i++ {
 		req := <-handler.v
 		raft.SendVoteResponse(VoteResponse{
-			Id:            req.ReceiverId,
+			ReceiverId:    req.ReceiverId,
 			RequestInTerm: req.Term,
 			Term:          req.Term,
 			VoteGranted:   true,

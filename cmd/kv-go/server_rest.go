@@ -131,8 +131,11 @@ func (r *restServer) HandleAppendEntryRequest(request kvgo.AppendEntryRequest) {
 		}
 
 		r.raft.SendAppendEntryResponse(kvgo.AppendEntryResponse{
-			Term:    resp.Term,
-			Success: resp.Success,
+			Term:          resp.Term,
+			Success:       resp.Success,
+			RequestInTerm: request.Term,
+			ReceiverId:    request.ReceiverId,
+			MatchIndex:    request.PrevLogIndex + len(request.Entries),
 		})
 	}()
 }
@@ -168,7 +171,7 @@ func (r *restServer) HandleVoteRequest(request kvgo.VoteRequest) {
 		}
 
 		r.raft.SendVoteResponse(kvgo.VoteResponse{
-			Id:            request.ReceiverId,
+			ReceiverId:    request.ReceiverId,
 			RequestInTerm: request.Term,
 			Term:          resp.Term,
 			VoteGranted:   resp.VoteGranted,

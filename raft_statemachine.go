@@ -64,7 +64,7 @@ type state struct {
 }
 
 func beginState(cfg *Config, timer rtimer.Timer) state {
-	f := MakeFollower(cfg, 0)
+	f := MakeFollower(cfg, 0, make([]LogEntry, 1), 0)
 	f.SetTimeout(timer)
 	return state{
 		s: &f,
@@ -190,8 +190,21 @@ func (r *Raft) Start() error {
 			default:
 				return fmt.Errorf("unknown type in voteResponse section")
 			}
-		case _ = <-r.appendEntryResponses:
-			// skip
+		case appendEntryResp := <-r.appendEntryResponses:
+			switch s := st.s.(type) {
+			case *Follower:
+				slog.Debug("skip append entry Response for follower")
+			case *Candidate:
+				slog.Debug("skip append entry Response for candidate")
+			case *Leader:
+				f := s.HandleAppendEntryResponse(appendEntryResp)
+				if f != nil {
+					slog.Info("became follower from leader state", "term", f.Term())
+					st = fromFollower(f, r.timer)
+				}
+			default:
+				return fmt.Errorf("unknown type in voteResponse section")
+			}
 		case <-r.timer.Chan():
 			switch s := st.s.(type) {
 			case *Follower:
