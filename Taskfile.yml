@@ -1,0 +1,8 @@
+version: '3'
+
+tasks:
+  test:
+    cmds:
+      - go test ./... --shuffle=on -race -cover -covermode=atomic -coverprofile=coverage.out
+      - go tool cover -func coverage.out | grep total
+    silent: true
