@@ -3,6 +3,7 @@ Distributed in-memory (at least for now) KV storage written in Go
 
 ## Motivation
 Just For Fun
+
 This is an educational project about how to develop scalable distributed systems.
 
 ## Disclaimer
