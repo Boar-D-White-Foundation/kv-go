@@ -3,28 +3,33 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/Boar-D-White-Foundation/kvgo"
-	"github.com/Boar-D-White-Foundation/kvgo/internal/rtimer"
 	"log/slog"
 	"strings"
 	"time"
+
+	"github.com/Boar-D-White-Foundation/kvgo"
+	"github.com/Boar-D-White-Foundation/kvgo/internal/rtimer"
 )
 
 func main() {
 	slog.Info("hello!")
+	/*
+			Specify the port we want to use to listen for client requests using:
+		lis, err := net.Listen(...).
+		Create an instance of the gRPC server using grpc.NewServer(...).
+		Register our service implementation with the gRPC server.
+		Call Serve() on the server with our port details to do a blocking wait until the process is killed or Stop() is called.
 
+	*/
 	config, err := parseConfig()
-	if err != nil {
-		slog.Error("can't parse config", "error", err)
-		return
-	}
 
 	raft := kvgo.MakeRaft(*config, rtimer.Default())
-	rest := makeRestServer(config, &raft)
-	raft.SetHandler(&rest)
+	//rest := makeRestServer(config, &raft)
+	grpc := makeGrpcServer(config, &raft)
+	raft.SetHandler(&grpc)
 
 	go func() {
-		rest.StartHttpServer()
+		grpc.raft.Start()
 		raft.Stop()
 	}()
 

@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-package kvgo;
+package generated;
 
-option go_package = "./kvgo";
+option go_package = "github.com/Boar-D-White-Foundation/kvgo/proto";
 
 service Rafter {
     rpc AppendEntry (AppendEntryRequest) returns (AppendEntryResponse) {}

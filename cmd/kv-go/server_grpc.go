@@ -2,43 +2,78 @@ package main
 
 import (
 	context "context"
+	"fmt"
 	"log/slog"
-	"net/http"
-	pb "raft"
+	"net"
 
 	"github.com/Boar-D-White-Foundation/kvgo"
-	codes "google.golang.org/grpc/codes"
-	status "google.golang.org/grpc/status"
+	pb "github.com/Boar-D-White-Foundation/kvgo/proto"
+	"google.golang.org/grpc"
 )
 
 type rafterServer struct {
 	pb.UnimplementedRafterServer
+	cfg  *kvgo.Config
+	raft *kvgo.Raft
 }
 
-func (s *rafterServer) AppendEntry(ctx context.Context, request *AppendEntryRequest) (*AppendEntryResponse, error) {
-	
-	if err := c.BindJSON(&request); err != nil {
-		slog.Error("can't read request body", "error", err)
+func makeGrpcServer(cfg *kvgo.Config, raft *kvgo.Raft) rafterServer {
+	return rafterServer{
+		cfg:  cfg,
+		raft: raft,
+	}
+}
+
+func Start(r *rafterServer) {
+	lis, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", r.cfg.Cluster[r.cfg.CurrentId]))
+	if err != nil {
+		slog.Error("failed to listen: %v", err)
 	}
 
+	s := grpc.NewServer()
+	pb.RegisterRafterServer(s, &rafterServer{})
+	slog.Info("server listening at %v", lis.Addr())
+	if err := s.Serve(lis); err != nil {
+		slog.Error("failed to serve: %v", err)
+	}
+}
+
+func (s *rafterServer) AppendEntry(ctx context.Context, request *pb.AppendEntryRequest) (*pb.AppendEntryResponse, error) {
 	message := kvgo.AppendEntryMessage{
 		Request: kvgo.AppendEntryRequest{
-			Id:         request.id,
+			Id:         int(request.Id),
 			ReceiverId: s.cfg.CurrentId,
-			Term:       request.,
+			Term:       request.Term,
 		},
 		Response: make(chan kvgo.AppendEntryResponse),
 	}
 
-	r.raft.SendAppendEntryMessage(message)
+	s.raft.SendAppendEntryMessage(message)
 	response := <-message.Response
-	c.IndentedJSON(http.StatusOK, &appendEntryResponseDto{
-		Term:    response.Term,
-		Success: response.Success,
-	})
-	return &pb.
-	return nil, status.Errorf(codes.Unimplemented, "method AppendEntry not implemented")
+	return &pb.AppendEntryResponse{
+		ReceiverId:    int32(response.ReceiverId),
+		RequestInTerm: response.RequestInTerm,
+		MatchIndex:    int32(response.MatchIndex),
+		Term:          response.Term,
+		Success:       response.Success,
+	}, nil
 }
-func (s *rafterServer) Vote(context.Context, *VoteRequest) (*VoteResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Vote not implemented")
+
+func (s *rafterServer) Vote(ctx context.Context, request *pb.VoteRequest) (*pb.VoteResponse, error) {
+	message := kvgo.VoteMessage{
+		Request: kvgo.VoteRequest{
+			ReceiverId:  s.cfg.CurrentId,
+			Term:        request.RequestInTerm,
+			CandidateId: int(request.CandidateId),
+		},
+		Response: make(chan kvgo.VoteResponse),
+	}
+	s.raft.SendVoteMessage(message)
+
+	response := <-message.Response
+
+	return &pb.VoteResponse{
+		Term:        response.Term,
+		VoteGranted: response.VoteGranted,
+	}, nil
 }
