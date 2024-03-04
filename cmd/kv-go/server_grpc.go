@@ -8,6 +8,7 @@ import (
 	"github.com/Boar-D-White-Foundation/kvgo"
 	pb "github.com/Boar-D-White-Foundation/kvgo/proto"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 type rafterServer struct {
@@ -25,9 +26,9 @@ func (r *rafterServer) HandleAppendEntryRequest(request kvgo.AppendEntryRequest)
 			Term: request.Term,
 		}
 
-		conn, err := grpc.Dial(r.cfg.Cluster[request.ReceiverId])
+		conn, err := grpc.Dial(r.cfg.Cluster[request.ReceiverId], grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
-			slog.Error("failed to create client: %s", r.cfg.Cluster[request.ReceiverId])
+			slog.Error("failed to create client: ", r.cfg.Cluster[request.ReceiverId], err)
 			return
 		}
 
@@ -59,9 +60,9 @@ func (r *rafterServer) HandleVoteRequest(request kvgo.VoteRequest) {
 			RequestInTerm: request.Term,
 		}
 
-		conn, err := grpc.Dial(r.cfg.Cluster[request.ReceiverId])
+		conn, err := grpc.Dial(r.cfg.Cluster[request.ReceiverId], grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
-			slog.Error("failed to create client: %s", r.cfg.Cluster[request.ReceiverId])
+			slog.Error("failed to create client: ", r.cfg.Cluster[request.ReceiverId], err)
 			return
 		}
 
@@ -116,7 +117,7 @@ func (r *rafterServer) Start() {
 
 	r.clients = clients*/
 
-	pb.RegisterRafterServer(s, &rafterServer{})
+	pb.RegisterRafterServer(s, r)
 	slog.Info("server listening at %v", lis.Addr())
 	if err := s.Serve(lis); err != nil {
 		slog.Error("failed to serve: %v", err)
