@@ -23,6 +23,11 @@ func main() {
 	*/
 	config, err := parseConfig()
 
+	if err != nil {
+		slog.Error("can't parse config", err)
+		return
+	}
+
 	raft := kvgo.MakeRaft(*config, rtimer.Default())
 	//rest := makeRestServer(config, &raft)
 	grpc := makeGrpcServer(config, &raft)
