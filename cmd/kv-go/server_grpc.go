@@ -2,7 +2,6 @@ package main
 
 import (
 	context "context"
-	"fmt"
 	"log/slog"
 	"net"
 
@@ -13,24 +12,110 @@ import (
 
 type rafterServer struct {
 	pb.UnimplementedRafterServer
-	cfg  *kvgo.Config
-	raft *kvgo.Raft
+	clients []pb.RafterClient
+	cfg     *kvgo.Config
+	raft    *kvgo.Raft
 }
 
-func makeGrpcServer(cfg *kvgo.Config, raft *kvgo.Raft) rafterServer {
-	return rafterServer{
+// HandleAppendEntryRequest implements kvgo.RequestHandler.
+func (r *rafterServer) HandleAppendEntryRequest(request kvgo.AppendEntryRequest) {
+	go func() {
+		req := pb.AppendEntryRequest{
+			Id:   int32(request.Id),
+			Term: request.Term,
+		}
+
+		conn, err := grpc.Dial(r.cfg.Cluster[request.ReceiverId])
+		if err != nil {
+			slog.Error("failed to create client: %s", r.cfg.Cluster[request.ReceiverId])
+			return
+		}
+
+		rc := pb.NewRafterClient(conn)
+
+		//recipient := r.clients[request.ReceiverId]
+		resp, err := rc.AppendEntry(context.Background(), &req)
+
+		if err != nil {
+			slog.Error("can't append entry: %s", err)
+			return
+		}
+
+		r.raft.SendAppendEntryResponse(kvgo.AppendEntryResponse{
+			Term:          resp.Term,
+			Success:       resp.Success,
+			RequestInTerm: request.Term,
+			ReceiverId:    request.ReceiverId,
+			MatchIndex:    request.PrevLogIndex + len(request.Entries),
+		})
+	}()
+}
+
+// HandleVoteRequest implements kvgo.RequestHandler.
+func (r *rafterServer) HandleVoteRequest(request kvgo.VoteRequest) {
+	go func() {
+		req := pb.VoteRequest{
+			CandidateId:   int32(request.CandidateId),
+			RequestInTerm: request.Term,
+		}
+
+		conn, err := grpc.Dial(r.cfg.Cluster[request.ReceiverId])
+		if err != nil {
+			slog.Error("failed to create client: %s", r.cfg.Cluster[request.ReceiverId])
+			return
+		}
+
+		rc := pb.NewRafterClient(conn)
+
+		//recipient := r.clients[request.ReceiverId]
+		resp, err := rc.Vote(context.Background(), &req)
+
+		if err != nil {
+			slog.Error("can't vote: %s", err)
+			return
+		}
+
+		r.raft.SendVoteResponse(kvgo.VoteResponse{
+			ReceiverId:    request.ReceiverId,
+			RequestInTerm: request.Term,
+			Term:          resp.Term,
+			VoteGranted:   resp.VoteGranted,
+		})
+	}()
+}
+
+func makeGrpcServer(cfg *kvgo.Config, raft *kvgo.Raft) *rafterServer {
+	return &rafterServer{
 		cfg:  cfg,
 		raft: raft,
 	}
 }
 
-func Start(r *rafterServer) {
-	lis, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", r.cfg.Cluster[r.cfg.CurrentId]))
+// fmt.Sprintf(":%d", *port)
+func (r *rafterServer) Start() {
+	lis, err := net.Listen("tcp", r.cfg.Cluster[r.cfg.CurrentId])
 	if err != nil {
-		slog.Error("failed to listen: %v", err)
+		slog.Error("failed to listen:", err)
 	}
 
 	s := grpc.NewServer()
+	//create clients for all ports in the cluster
+	/*clients := make([]pb.RafterClient, len(r.cfg.Cluster))
+	for i := 0; i < len(r.cfg.Cluster); i++ {
+		port := r.cfg.Cluster[i]
+
+		conn, err := grpc.Dial(port)
+		if err != nil {
+			slog.Error("failed to create client: %s", port)
+		}
+
+		rc := pb.NewRafterClient(conn)
+		clients[i] = rc
+
+	}
+
+	r.clients = clients*/
+
 	pb.RegisterRafterServer(s, &rafterServer{})
 	slog.Info("server listening at %v", lis.Addr())
 	if err := s.Serve(lis); err != nil {

@@ -26,10 +26,10 @@ func main() {
 	raft := kvgo.MakeRaft(*config, rtimer.Default())
 	//rest := makeRestServer(config, &raft)
 	grpc := makeGrpcServer(config, &raft)
-	raft.SetHandler(&grpc)
+	raft.SetHandler(grpc)
 
 	go func() {
-		grpc.raft.Start()
+		grpc.Start()
 		raft.Stop()
 	}()
 
